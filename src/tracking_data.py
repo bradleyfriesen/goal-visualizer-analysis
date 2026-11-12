@@ -4,13 +4,8 @@ import json
 import numpy as np
 import pandas as pd
 
+from src.paths import TRACKING_DATA_DIR, COLOUR_PATH
 
-# Project paths
-PROJECT_DIR = Path(__file__).resolve().parents[1]
-ROOT_DIR = PROJECT_DIR.parent
-
-DATA_DIR = ROOT_DIR / "data" / "processed" / "nhl-tracking-pipeline"
-COLOUR_PATH = ROOT_DIR / "data" / "processed" / "nhl_team_colours.json"
 
 
 # Columns required for loading and preparing tracking data
@@ -50,7 +45,6 @@ def load_tracking_game(
 	season,
 	game_id,
 	columns=None,
-	data_dir=DATA_DIR,
 ):
 	"""
 	Load tracking data for one game.
@@ -64,8 +58,6 @@ def load_tracking_game(
 	columns : list[str] or None
 		Optional columns to load. Required visualization columns are
 		automatically included. None loads every column.
-	data_dir : Path
-		Root directory containing the tracking data.
 
 	Returns
 	-------
@@ -73,7 +65,7 @@ def load_tracking_game(
 		Sorted and cleaned tracking data for the selected game.
 	"""
 	
-	tracking_path = Path(data_dir) / "tracking" / f"{season}.parquet"
+	tracking_path = TRACKING_DATA_DIR / f"{season}.parquet"
 
 	if not tracking_path.exists():
 		raise FileNotFoundError(
@@ -204,14 +196,13 @@ def load_team_colours(colour_path=COLOUR_PATH):
 	dict[int, dict]
 		Mapping from NHL team ID to its complete colour information.
 	"""
-	colour_path = Path(colour_path)
 
-	if not colour_path.exists():
+	if not COLOUR_PATH.exists():
 		raise FileNotFoundError(
-			f"Team colour file not found: {colour_path}"
+			f"Team colour file not found: {COLOUR_PATH}"
 		)
 
-	with open(colour_path, encoding="utf-8") as f:
+	with open(COLOUR_PATH, encoding="utf-8") as f:
 		team_data = json.load(f)
 
 	team_colours = {

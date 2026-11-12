@@ -7,7 +7,6 @@ from src.tracking_data import (
 )
 from src.tracking_viz import ReplayVisualizer, ReplayController
 
-
 # Test selection
 SEASON = "20252026"
 GAME_ID = 2025020001
@@ -42,7 +41,6 @@ team_colours = load_team_colours()
 
 home_team_id = int(event_data["home_team_id"].dropna().iloc[0])
 away_team_id = int(event_data["away_team_id"].dropna().iloc[0])
-
 
 # Create rink and visualizer
 rink = NHLRink()
