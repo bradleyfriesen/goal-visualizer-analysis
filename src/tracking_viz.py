@@ -371,7 +371,7 @@ class ReplayController:
 		
 
 
-		'''
+		################################################################
 		self.fig.canvas.draw()
 
 		start = time.perf_counter()
@@ -386,7 +386,8 @@ class ReplayController:
 			f"Average frame rendering time: "
 			f"{1000 * elapsed / min(100, self.n_frames):.1f} ms"
 		)
-		'''
+		################################################################
+
 		
 
 	def _set_frame(self, position):

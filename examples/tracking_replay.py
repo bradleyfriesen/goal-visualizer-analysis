@@ -1,9 +1,10 @@
 from sportypy.surfaces.hockey import NHLRink
 
 from src.tracking_data import (
-	load_tracking_game,
-	select_goal,
-	load_team_colours,
+    load_tracking_game,
+    load_game_info,
+    select_goal,
+    load_team_colours,
 )
 from src.tracking_viz import ReplayVisualizer, ReplayController
 
@@ -12,6 +13,13 @@ SEASON = "20252026"
 GAME_ID = 2025020001
 GOAL_NUMBER = 1
 
+game_info = load_game_info(SEASON, GAME_ID)
+
+print(f"Date: {game_info['game_date'].iloc[0]}")
+print(
+    f"Matchup: {game_info['away_team_abbrev'].iloc[0]} "
+    f"@ {game_info['home_team_abbrev'].iloc[0]}"
+)
 
 # Load tracking data
 tracking = load_tracking_game(

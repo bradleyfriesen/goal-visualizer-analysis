@@ -4,7 +4,7 @@ import json
 import numpy as np
 import pandas as pd
 
-from src.paths import TRACKING_DATA_DIR, COLOUR_PATH
+from src.paths import PROCESSED_DATA_DIR, COLOUR_PATH
 
 
 
@@ -65,7 +65,7 @@ def load_tracking_game(
 		Sorted and cleaned tracking data for the selected game.
 	"""
 	
-	tracking_path = TRACKING_DATA_DIR / f"{season}.parquet"
+	tracking_path = PROCESSED_DATA_DIR / "nhl-tracking-pipeline" / "tracking" / f"{season}.parquet"
 
 	if not tracking_path.exists():
 		raise FileNotFoundError(
@@ -187,6 +187,7 @@ def select_goal(
 	return event_data, frames, coord_x, coord_y
 
 
+
 def load_team_colours(colour_path=COLOUR_PATH):
 	"""
 	Load NHL team colours, keyed by team ID.
@@ -211,3 +212,26 @@ def load_team_colours(colour_path=COLOUR_PATH):
 	}
 
 	return team_colours
+
+
+
+def load_game_info(season: str, game_id: int,) -> pd.DataFrame:
+	"""
+	Load metadata for a specific game.
+		Returns
+	-------
+	pd.DataFrame
+		Mapping from NHL game ID to its game information.
+	"""
+
+	path = PROCESSED_DATA_DIR / "nhl-tracking-pipeline" / "games" / f"{season}.parquet"
+	games = pd.read_parquet(path)
+
+	game_info = games.loc[games["game_id"] == game_id].copy()
+
+	if game_info.empty:
+		raise ValueError(
+			f"Game ID {game_id} not found in season {season}."
+		)
+
+	return game_info

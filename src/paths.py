@@ -19,5 +19,4 @@ DATA_DIR = Path(
 RAW_DATA_DIR = DATA_DIR / "raw"
 PROCESSED_DATA_DIR = DATA_DIR / "processed"
 
-TRACKING_DATA_DIR = PROCESSED_DATA_DIR / "nhl-tracking-pipeline" / "tracking"
 COLOUR_PATH = PROCESSED_DATA_DIR / "nhl_team_colours.json"
