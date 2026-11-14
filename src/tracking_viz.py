@@ -113,95 +113,62 @@ class ReplayVisualizer:
 			bbox=dict(facecolor="white", alpha=0.85, edgecolor="none", pad=4),
 			zorder=20,
 		)
-
-		# Create one player marker, jersey label, and trail artist per player.
-		self.player_artists = {}
-		self.player_trails = {}
-		self.player_labels = {}
-		self.scorer_rings = {}
-
-		for player in self.player_keys:
-			# Players labelled by team, number
-			key = (player["team_id"], player["sweater_number"])
-			team_id = int(player["team_id"])
-			colour = self.team_colours[team_id]
-
-			if team_id == self.home_team_id:
-				face_colour = colour
-				edge_colour = "white"
-				label_colour = "white"
-			elif team_id == self.away_team_id:
-				face_colour = "white"
-				edge_colour = colour
-				label_colour = colour
-			else:
-				raise ValueError(f"Unexpected player team ID: {team_id}")
-
-			# Player marker
-			marker = self.ax.scatter(
-				[],
-				[],
-				s=230,
-				c=[face_colour],
-				edgecolors=edge_colour,
-				linewidths=1.5,
-				zorder=103,
-			)
-
-			# Separate outer ring, shown only for the scorer
-			scorer_ring = self.ax.scatter(
-				[],
-				[],
-				s=450,
-				facecolors="none",
-				edgecolors=colour,
-				linewidths=2.5,
-				zorder=102,
-			)
-
-			# Jersey number
-			label = self.ax.text(
-				0,
-				0,
-				str(int(player["sweater_number"])),
-				ha="center",
-				va="center",
-				fontsize=8,
-				fontweight="bold",
-				color=label_colour,
-				zorder=104,
-			)
-
-			# Player trail
-			trail = self.ax.scatter(
-				[],
-				[],
-				s=[],
-				facecolors=np.empty((0, trail_frames)),
-				marker="o",
-				linewidths=0,
-				zorder=101,
-			)
-
-			self.player_artists[key] = marker
-			self.player_labels[key] = label
-			self.player_trails[key] = trail
-			self.scorer_rings[key] = scorer_ring
-			
-		self.player_render_data = []
-
+		
+		
+		P, T = len(self.player_keys), self.trail_frames
+		team_ids = np.array([int(p["team_id"]) for p in self.player_keys])
+		
+		unexpected = set(team_ids) - set(self.team_colours)
+		if unexpected:
+		    raise ValueError(f"Unexpected player team ID(s): {unexpected}")
+		
+		is_home = team_ids == self.home_team_id                                # (P,)
+		base = np.array([to_rgba(self.team_colours[t]) for t in team_ids])     # (P, 4)
+		white = np.array(to_rgba("white"))
+		
+		# Home: filled team colour, white edge. Away: white fill, team-colour edge.
+		face = np.where(is_home[:, None], base, white)
+		edge = np.where(is_home[:, None], white, base)
+		
+		# All player markers in one scatter. Dummy finite positions at creation,
+		# because scatter drops NaN points, which would desync the colour arrays.
+		self.players = self.ax.scatter(
+		    np.zeros(P), np.zeros(P), s=230,
+		    facecolors=face, edgecolors=edge, linewidths=1.5, zorder=103,
+		)
+		self.players.set_offsets(np.full((P, 2), np.nan))
+		
+		# Jersey numbers: still one Text per player, but in a plain list indexed like player_keys
+		self.labels = []
 		for j, player in enumerate(self.player_keys):
-			key = (player["team_id"], player["sweater_number"])
-
-			self.player_render_data.append((
-				j,
-				key,
-				int(player["team_id"]),
-				self.player_artists[key],
-				self.player_labels[key],
-				self.scorer_rings[key],
-				self.player_trails[key],
-			))
+		    self.labels.append(self.ax.text(
+		        0, 0, str(int(player["sweater_number"])),
+		        ha="center", va="center", fontsize=8, fontweight="bold",
+		        color="white" if is_home[j] else self.team_colours[team_ids[j]],
+		        zorder=104, visible=False,
+		    ))
+		
+		# All player trails in one scatter
+		self.trails = self.ax.scatter(np.zeros(1), np.zeros(1), linewidths=0, zorder=101)
+		self.trails.set_offsets(self.empty_offsets)
+		
+		# Per-age trail styling, shape (T, P, ...), oldest -> newest. Built once.
+		self.trail_rgba = np.repeat(base[None], T, axis=0)
+		self.trail_rgba[:, :, 3] = self.trail_alpha[:, None]
+		self.trail_size_grid = np.repeat(self.trail_sizes[:, None], P, axis=1)
+		
+		# Scorer ring: index into player_keys, or None
+		self.scorer_j = next(
+		    (j for j, p in enumerate(self.player_keys)
+		     if (p["team_id"], p["sweater_number"]) == self.scorer_key),
+		    None,
+		)
+		ring_colour = base[self.scorer_j] if self.scorer_j is not None else "none"
+		self.ring = self.ax.scatter(
+		    np.zeros(1), np.zeros(1), s=450, facecolors="none",
+		    edgecolors=ring_colour, linewidths=2.5, zorder=102,
+		)
+		self.ring.set_offsets(self.empty_offsets)
 
 		# Puck and puck trail.
 		self.puck_artist = self.ax.scatter(
@@ -323,74 +290,49 @@ class ReplayVisualizer:
 			)
 
 	def update(self, frame_position):
-		frame_position = int(
-			np.clip(frame_position, 0, len(self.frames) - 1)
-		)
-	
-		self.current_frame_position = frame_position
-		frame_idx = self.frames[frame_position]
-	
-		# Update players
-		for j, key, team_id, marker, label, ring, trail_artist in self.player_render_data:
-			
-			xy = self.player_xy[frame_position, j]
-		
-			if not self.player_valid[frame_position, j]:
-				marker.set_offsets(self.empty_offsets)
-				ring.set_offsets(self.empty_offsets)
-				trail_artist.set_offsets(self.empty_offsets)
-				label.set_visible(False)
-				continue
-	
-			marker.set_offsets([xy])
-			label.set_position(xy)
-			label.set_visible(True)
-	
-			if self.highlight_scorer and key == self.scorer_key:
-				ring.set_offsets([xy])
-			else:
-				ring.set_offsets(self.empty_offsets)
-			
-			# Update trail
-			start = max(0, frame_position - self.trail_frames + 1)
-	
-			trail_xy = self.player_xy[start:frame_position + 1, j]
-			trail_xy = trail_xy[self.player_valid[start:frame_position + 1, j]]
-	
-			self._set_trail(
-				trail_artist,
-				trail_xy,
-				self.trail_colours[team_id]			
-			)
-			
-		# Update puck
-		puck_xy = self.puck_xy[frame_position]
-	
-		if self.puck_valid[frame_position]:
-			self.puck_artist.set_offsets([puck_xy])
+		pos = int(np.clip(frame_position, 0, len(self.frames) - 1))
+		self.current_frame_position = pos
+		frame_idx = self.frames[pos]
+
+		# Players (NaN rows = missing this frame, so they simply aren't drawn)
+		xy = self.player_xy[pos]
+		self.players.set_offsets(xy)
+
+		# Player trails: last k frames of every player, flattened frame-major
+		start = max(0, pos - self.trail_frames + 1)
+		k = pos - start + 1
+		self.trails.set_offsets(self.player_xy[start:pos + 1].reshape(-1, 2))
+		self.trails.set_sizes(self.trail_size_grid[-k:].ravel())
+		self.trails.set_facecolors(self.trail_rgba[-k:].reshape(-1, 4))
+
+		# Jersey numbers
+		valid = self.player_valid[pos]
+		for j, label in enumerate(self.labels):
+			label.set_visible(bool(valid[j]))
+			if valid[j]:
+				label.set_position(xy[j])
+
+		# Scorer ring
+		j = self.scorer_j
+		if self.highlight_scorer and j is not None and valid[j]:
+			self.ring.set_offsets(xy[j][None])
+		else:
+			self.ring.set_offsets(self.empty_offsets)
+
+		# Puck (unchanged)
+		if self.puck_valid[pos]:
+			self.puck_artist.set_offsets([self.puck_xy[pos]])
 		else:
 			self.puck_artist.set_offsets(self.empty_offsets)
-	
-		start = max(0, frame_position - self.trail_frames + 1)
-	
-		puck_trail_xy = self.puck_xy[start:frame_position + 1]
-		puck_trail_xy = puck_trail_xy[
-			self.puck_valid[start:frame_position + 1]
-		]
-	
-		self._set_trail(
-			self.puck_trail,
-			puck_trail_xy,
-			self.puck_trail_colour,
-		)	
-		
-		# Update clock
-		self.clock_text.set_text(
-			f"Frame {frame_idx}  |  {self.clock_strings[frame_position]}"
-		)
-	
+
+		puck_trail_xy = self.puck_xy[start:pos + 1][self.puck_valid[start:pos + 1]]
+		self._set_trail(self.puck_trail, puck_trail_xy, self.puck_trail_colour)
+
+		# Clock
+		self.clock_text.set_text(f"Frame {frame_idx}  |  {self.clock_strings[pos]}")
+
 		self.fig.canvas.draw_idle()
-	
+
 	def show(self):
 		plt.show()
 
