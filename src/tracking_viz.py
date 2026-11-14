@@ -4,7 +4,6 @@ import matplotlib.pyplot as plt
 
 from matplotlib.colors import to_rgba
 from matplotlib.widgets import Slider, Button
-from IPython.display import display
 
 import time
 
@@ -25,6 +24,8 @@ class ReplayVisualizer:
 		highlight_scorer=True,
 		figsize=(12, 6.5),
 	):
+		self.empty_offsets = np.empty((0, 2))
+		
 		# Check arguments are good
 		self.data = data.copy()
 		self.frames = np.asarray(frames)
@@ -176,7 +177,7 @@ class ReplayVisualizer:
 				[],
 				[],
 				s=[],
-				c=[],
+				facecolors=np.empty((0, trail_frames)),
 				marker="o",
 				linewidths=0,
 				zorder=101,
@@ -186,6 +187,21 @@ class ReplayVisualizer:
 			self.player_labels[key] = label
 			self.player_trails[key] = trail
 			self.scorer_rings[key] = scorer_ring
+			
+		self.player_render_data = []
+
+		for j, player in enumerate(self.player_keys):
+			key = (player["team_id"], player["sweater_number"])
+
+			self.player_render_data.append((
+				j,
+				key,
+				int(player["team_id"]),
+				self.player_artists[key],
+				self.player_labels[key],
+				self.scorer_rings[key],
+				self.player_trails[key],
+			))
 
 		# Puck and puck trail.
 		self.puck_artist = self.ax.scatter(
@@ -201,7 +217,7 @@ class ReplayVisualizer:
 			[],
 			[],
 			s=[],
-			c=[],
+			facecolors=np.empty((0, trail_frames)),
 			marker="o",
 			linewidths=0,
 			zorder=102,
@@ -210,37 +226,18 @@ class ReplayVisualizer:
 		self.current_frame_position = 0
 		self.update(0)
 		
-		
-		
-		
-
-	@staticmethod
-	def _finite_xy(rows, x_col, y_col):
-		rows = rows.dropna(subset=[x_col, y_col])
-		if rows.empty:
-			return np.empty((0, 2))
-		return rows[[x_col, y_col]].to_numpy(dtype=float)
-
-	def _trail(self, rows, frame_position):
-		start = max(0, frame_position - self.trail_frames + 1)
-		past_frames = self.frames[start : frame_position + 1]
-
-		rows = rows.loc[rows["frame_idx"].isin(past_frames)]
-		rows = rows.sort_values("frame_idx")
-
-		return self._finite_xy(rows, self.x_col, self.y_col)
-
 	def _set_trail(self, artist, xy, rgba):
-	    n = len(xy)
-	
-	    if n == 0:
-	        artist.set_offsets(np.empty((0, 2)))
-	        return
-	
-	    artist.set_offsets(xy)
-	    artist.set_sizes(self.trail_sizes[-n:])
-	    artist.set_facecolors(rgba[-n:])
-		
+		n = len(xy)
+
+		if n == 0:
+			artist.set_offsets(self.empty_offsets)
+			return
+
+		artist.set_array(None)          # make sure colours aren't colormapped
+		artist.set_offsets(xy)
+		artist.set_sizes(self.trail_sizes[-n:])
+		artist.set_facecolors(rgba[-n:])
+						
 	def _precompute_data(self):
 		n_frames = len(self.frames)
 		n_players = len(self.player_keys)
@@ -334,20 +331,14 @@ class ReplayVisualizer:
 		frame_idx = self.frames[frame_position]
 	
 		# Update players
-		for j, player in enumerate(self.player_keys):
-			key = (player["team_id"], player["sweater_number"])
-	
+		for j, key, team_id, marker, label, ring, trail_artist in self.player_render_data:
+			
 			xy = self.player_xy[frame_position, j]
-	
-			marker = self.player_artists[key]
-			label = self.player_labels[key]
-			ring = self.scorer_rings[key]
-			trail_artist = self.player_trails[key]
-	
+		
 			if not self.player_valid[frame_position, j]:
-				marker.set_offsets(np.empty((0, 2)))
-				ring.set_offsets(np.empty((0, 2)))
-				trail_artist.set_offsets(np.empty((0, 2)))
+				marker.set_offsets(self.empty_offsets)
+				ring.set_offsets(self.empty_offsets)
+				trail_artist.set_offsets(self.empty_offsets)
 				label.set_visible(False)
 				continue
 	
@@ -358,7 +349,7 @@ class ReplayVisualizer:
 			if self.highlight_scorer and key == self.scorer_key:
 				ring.set_offsets([xy])
 			else:
-				ring.set_offsets(np.empty((0, 2)))
+				ring.set_offsets(self.empty_offsets)
 			
 			# Update trail
 			start = max(0, frame_position - self.trail_frames + 1)
@@ -369,16 +360,16 @@ class ReplayVisualizer:
 			self._set_trail(
 				trail_artist,
 				trail_xy,
-				self.trail_colours[int(player["team_id"])],
+				self.trail_colours[team_id]			
 			)
-	
+			
 		# Update puck
 		puck_xy = self.puck_xy[frame_position]
 	
 		if self.puck_valid[frame_position]:
 			self.puck_artist.set_offsets([puck_xy])
 		else:
-			self.puck_artist.set_offsets(np.empty((0, 2)))
+			self.puck_artist.set_offsets(self.empty_offsets)
 	
 		start = max(0, frame_position - self.trail_frames + 1)
 	
@@ -463,6 +454,7 @@ class ReplayController:
 		# Draw initial frame.
 		self.replay.update(0)
 
+		'''
 		################################################################
 		self.fig.canvas.draw()
 
@@ -479,7 +471,8 @@ class ReplayController:
 			f"{1000 * elapsed / min(100, self.n_frames):.1f} ms"
 		)
 		################################################################
-
+		'''
+		
 	def _set_frame(self, position):
 		"""Set and display a frame by its position."""
 		self.position = int(np.clip(position, 0, self.n_frames - 1))
