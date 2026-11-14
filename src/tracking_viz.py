@@ -1,4 +1,5 @@
 import numpy as np
+import pandas as pd
 import matplotlib.pyplot as plt
 
 from matplotlib.colors import to_rgba
@@ -8,10 +9,9 @@ from IPython.display import display
 import time
 
 
-
 class ReplayVisualizer:
-# Visualize player and puck tracking data as a frame-by-frame replay.
-	
+	# Visualize player and puck tracking data as a frame-by-frame replay.
+
 	def __init__(
 		self,
 		data,
@@ -30,16 +30,20 @@ class ReplayVisualizer:
 		self.frames = np.asarray(frames)
 		self.x_col = x_col
 		self.y_col = y_col
-		self.trail_frames = int(trail_frames)
-		self.highlight_scorer = highlight_scorer
 		
+		self.trail_frames = int(trail_frames)
+		self.trail_alpha = np.linspace(0.12, 0.65, self.trail_frames)
+		self.trail_sizes = np.linspace(12, 35, self.trail_frames)
+		
+		self.highlight_scorer = highlight_scorer
+
 		self.home_team_id = int(self.data["home_team_id"].dropna().iloc[0])
 		self.away_team_id = int(self.data["away_team_id"].dropna().iloc[0])
-		
+
 		self.player_data = self.data.loc[
 			self.data["entity_type"].str.lower().eq("player")
 		].copy()
-		
+
 		self.puck_data = self.data.loc[
 			self.data["entity_type"].str.lower().eq("puck")
 		].copy()
@@ -52,27 +56,60 @@ class ReplayVisualizer:
 			.to_dict("records")
 		)
 		
+		# Compute frame data
+		self._precompute_data()
+
 		# Assign team colours by id.
 		self.team_colours = {
 			self.home_team_id: home_team_colour,
 			self.away_team_id: away_team_colour,
 		}
 		
+		# Assign trail colours
+		self.trail_colours = {}
+
+		for team_id, colour in self.team_colours.items():
+			rgba = np.tile(
+				to_rgba(colour),
+				(self.trail_frames, 1),
+			)
+			rgba[:, 3] = self.trail_alpha
+			self.trail_colours[team_id] = rgba
+
+		self.puck_trail_colour = np.tile(
+			to_rgba("black"),
+			(self.trail_frames, 1),
+		)
+		self.puck_trail_colour[:, 3] = self.trail_alpha
+
 		# Initialize figure and rink
 		self.fig, self.ax = plt.subplots(figsize=figsize)
 		rink.draw(ax=self.ax)
 		self.ax.set_aspect("equal", adjustable="box")
-		self.ax.set_title("NHL tracking replay")
+		
+		home_team = self.data.loc[
+			self.data["team_id"].eq(self.home_team_id),
+			"team_abbrev",
+		].iloc[0]
+
+		away_team = self.data.loc[
+			self.data["team_id"].eq(self.away_team_id),
+			"team_abbrev",
+		].iloc[0]
+
+		self.ax.set_title(
+		    f"{away_team} at {home_team}"
+		)
 		
 		self.clock_text = self.ax.text(
-			0.015, 0.985, "", transform=self.ax.transAxes,
-			ha="left", va="top", fontsize=11,
-			bbox=dict(
-				facecolor="white",
-				alpha=0.85,
-				edgecolor="none",
-				pad=4
-			),
+			0.015,
+			0.985,
+			"",
+			transform=self.ax.transAxes,
+			ha="left",
+			va="top",
+			fontsize=11,
+			bbox=dict(facecolor="white", alpha=0.85, edgecolor="none", pad=4),
 			zorder=20,
 		)
 
@@ -98,29 +135,51 @@ class ReplayVisualizer:
 				label_colour = colour
 			else:
 				raise ValueError(f"Unexpected player team ID: {team_id}")
-				
+
 			# Player marker
 			marker = self.ax.scatter(
-				[], [], s=230, c=[face_colour], edgecolors=edge_colour,
-				linewidths=1.5, zorder=103,
+				[],
+				[],
+				s=230,
+				c=[face_colour],
+				edgecolors=edge_colour,
+				linewidths=1.5,
+				zorder=103,
 			)
 
 			# Separate outer ring, shown only for the scorer
 			scorer_ring = self.ax.scatter(
-				[], [], s=450, facecolors="none", edgecolors=colour,
-				linewidths=2.5, zorder=102,
+				[],
+				[],
+				s=450,
+				facecolors="none",
+				edgecolors=colour,
+				linewidths=2.5,
+				zorder=102,
 			)
 
 			# Jersey number
 			label = self.ax.text(
-				0, 0, str(int(player["sweater_number"])),
-				ha="center", va="center", fontsize=8,
-				fontweight="bold", color=label_colour, zorder=104,
+				0,
+				0,
+				str(int(player["sweater_number"])),
+				ha="center",
+				va="center",
+				fontsize=8,
+				fontweight="bold",
+				color=label_colour,
+				zorder=104,
 			)
 
 			# Player trail
 			trail = self.ax.scatter(
-				[], [], s=[], c=[], marker="o", linewidths=0, zorder=101,
+				[],
+				[],
+				s=[],
+				c=[],
+				marker="o",
+				linewidths=0,
+				zorder=101,
 			)
 
 			self.player_artists[key] = marker
@@ -130,15 +189,30 @@ class ReplayVisualizer:
 
 		# Puck and puck trail.
 		self.puck_artist = self.ax.scatter(
-			[], [], s=45, c="black", edgecolors="white",
-			linewidths=0.7, zorder=106,
+			[],
+			[],
+			s=45,
+			c="black",
+			edgecolors="white",
+			linewidths=0.7,
+			zorder=106,
 		)
 		self.puck_trail = self.ax.scatter(
-			[], [], s=[], c=[], marker="o", linewidths=0, zorder=102,
+			[],
+			[],
+			s=[],
+			c=[],
+			marker="o",
+			linewidths=0,
+			zorder=102,
 		)
 
 		self.current_frame_position = 0
 		self.update(0)
+		
+		
+		
+		
 
 	@staticmethod
 	def _finite_xy(rows, x_col, y_col):
@@ -149,145 +223,185 @@ class ReplayVisualizer:
 
 	def _trail(self, rows, frame_position):
 		start = max(0, frame_position - self.trail_frames + 1)
-		past_frames = self.frames[start:frame_position + 1]
-	
+		past_frames = self.frames[start : frame_position + 1]
+
 		rows = rows.loc[rows["frame_idx"].isin(past_frames)]
 		rows = rows.sort_values("frame_idx")
 
 		return self._finite_xy(rows, self.x_col, self.y_col)
+
+	def _set_trail(self, artist, xy, rgba):
+	    n = len(xy)
+	
+	    if n == 0:
+	        artist.set_offsets(np.empty((0, 2)))
+	        return
+	
+	    artist.set_offsets(xy)
+	    artist.set_sizes(self.trail_sizes[-n:])
+	    artist.set_facecolors(rgba[-n:])
 		
-	def _set_trail(self, artist, xy, base_colour):
-		if len(xy) == 0:
-			artist.set_offsets(np.empty((0, 2)))
-			artist.set_sizes([])
-			artist.set_array(None)
-			artist.set_facecolors([])
-			return
+	def _precompute_data(self):
+		n_frames = len(self.frames)
+		n_players = len(self.player_keys)
 	
-		alpha = np.linspace(0.12, 0.65, len(xy))
-		rgba = np.tile(to_rgba(base_colour), (len(xy), 1))
-		rgba[:, 3] = alpha
-	
-		sizes = np.linspace(12, 35, len(xy))
-	
-		artist.set_offsets(xy)
-		artist.set_sizes(sizes)
-		artist.set_array(None)
-		artist.set_facecolors(rgba)
-		
-	def update(self, frame_position):
-		frame_position = int(
-			np.clip(frame_position, 0, len(self.frames) - 1)
+		# Player positions: (frame, player, coordinate)
+		self.player_xy = np.full(
+			(n_frames, n_players, 2), np.nan
 		)
-		self.current_frame_position = frame_position
-		frame_idx = self.frames[frame_position]
 
-		current = self.data.loc[self.data["frame_idx"] == frame_idx]
-		
-		current_players = current.loc[
-			current["entity_type"].str.lower().eq("player")
-		]
+		scorer_mask = self.player_data["is_scorer"].astype("boolean").fillna(False)
+		scorer = self.player_data.loc[scorer_mask]		
 
-		# Update player positions, labels, scorer outlines, and trails.
-		for player in self.player_keys:
-			key = (player["team_id"], player["sweater_number"])
-			
-			mask = (
-				current_players["team_id"].eq(player["team_id"])
-				& current_players["sweater_number"].eq(player["sweater_number"])
-			)
-			
-			row = current_players.loc[mask]
-
-			marker = self.player_artists[key]
-			label = self.player_labels[key]
-			trail_artist = self.player_trails[key]
-			ring = self.scorer_rings[key]
-			
-			if row.empty:
-				marker.set_offsets(np.empty((0, 2)))
-				ring.set_offsets(np.empty((0, 2)))
-				label.set_visible(False)
-				trail_artist.set_offsets(np.empty((0, 2)))
-				trail_artist.set_sizes([])
-				trail_artist.set_facecolors([])
-				continue
-
-			row = row.iloc[0]
-			x, y = row[self.x_col], row[self.y_col]
-			marker.set_offsets([[x, y]])
-			label.set_position((x, y))
-			label.set_visible(True)
-
-			is_scorer = bool(row.get("is_scorer", False))
-
-			if self.highlight_scorer and is_scorer:
-				ring.set_offsets([[x, y]])
-			else:
-				ring.set_offsets(np.empty((0, 2)))
-				
-			history = self.player_data.loc[
+		if scorer.empty:
+		    self.scorer_key = None
+		else:
+		    row = scorer.iloc[0]
+		    self.scorer_key = (
+		        row["team_id"],
+		        row["sweater_number"],
+		    )
+	
+		for j, player in enumerate(self.player_keys):
+			rows = self.player_data.loc[
 				self.player_data["team_id"].eq(player["team_id"])
 				& self.player_data["sweater_number"].eq(
 					player["sweater_number"]
 				)
 			]
+	
+			rows = rows.drop_duplicates("frame_idx")
+			rows = rows.set_index("frame_idx").reindex(self.frames)
+	
+			self.player_xy[:, j, :] = rows[
+				[self.x_col, self.y_col]
+			].to_numpy(dtype=float)
+		
+		# Puck positions
+		puck = (
+			self.puck_data
+			.drop_duplicates("frame_idx")
+			.set_index("frame_idx")
+			.reindex(self.frames)
+		)
+	
+		self.puck_xy = puck[
+			[self.x_col, self.y_col]
+		].to_numpy(dtype=float)
+
+		self.player_valid = np.isfinite(self.player_xy).all(axis=2)
+		self.puck_valid = np.isfinite(self.puck_xy).all(axis=1)
+
+		# Precompute period and game clock.
+		clock_data = (
+			self.data
+			.groupby("frame_idx", sort=False)
+			.first()
+			.reindex(self.frames)
+		)
+		
+		periods = clock_data["period"].to_numpy()
+		seconds_to_goal = clock_data["seconds_to_goal"].to_numpy(dtype=float)
+		
+		goal_time = clock_data["time_in_period"].to_numpy()
+		
+		self.clock_strings = []
+		
+		for period, seconds, goal_clock in zip(
+			periods, seconds_to_goal, goal_time
+		):
+			if pd.isna(period) or pd.isna(seconds) or pd.isna(goal_clock):
+				self.clock_strings.append("")
+				continue
+		
+			minutes, seconds_part = map(int, goal_clock.split(":"))
+			goal_seconds = minutes * 60 + seconds_part
+		
+			clock_seconds = goal_seconds + seconds
+		
+			minutes, seconds_part = divmod(int(round(clock_seconds)), 60)
+		
+			self.clock_strings.append(
+				f"P{int(period)} {minutes:02d}:{seconds_part:02d}"
+			)
+
+	def update(self, frame_position):
+		frame_position = int(
+			np.clip(frame_position, 0, len(self.frames) - 1)
+		)
+	
+		self.current_frame_position = frame_position
+		frame_idx = self.frames[frame_position]
+	
+		# Update players
+		for j, player in enumerate(self.player_keys):
+			key = (player["team_id"], player["sweater_number"])
+	
+			xy = self.player_xy[frame_position, j]
+	
+			marker = self.player_artists[key]
+			label = self.player_labels[key]
+			ring = self.scorer_rings[key]
+			trail_artist = self.player_trails[key]
+	
+			if not self.player_valid[frame_position, j]:
+				marker.set_offsets(np.empty((0, 2)))
+				ring.set_offsets(np.empty((0, 2)))
+				trail_artist.set_offsets(np.empty((0, 2)))
+				label.set_visible(False)
+				continue
+	
+			marker.set_offsets([xy])
+			label.set_position(xy)
+			label.set_visible(True)
+	
+			if self.highlight_scorer and key == self.scorer_key:
+				ring.set_offsets([xy])
+			else:
+				ring.set_offsets(np.empty((0, 2)))
 			
-			trail_xy = self._trail(history, frame_position)
-			
+			# Update trail
+			start = max(0, frame_position - self.trail_frames + 1)
+	
+			trail_xy = self.player_xy[start:frame_position + 1, j]
+			trail_xy = trail_xy[self.player_valid[start:frame_position + 1, j]]
+	
 			self._set_trail(
 				trail_artist,
 				trail_xy,
-				self.team_colours[int(player["team_id"])],
+				self.trail_colours[int(player["team_id"])],
 			)
-
-		# Update puck and its trail.
-		current_puck = current.loc[
-			current["entity_type"].str.lower().eq("puck")
-		]
-		
-		if current_puck.empty:
-			self.puck_artist.set_offsets(np.empty((0, 2)))
+	
+		# Update puck
+		puck_xy = self.puck_xy[frame_position]
+	
+		if self.puck_valid[frame_position]:
+			self.puck_artist.set_offsets([puck_xy])
 		else:
-			puck_row = current_puck.iloc[0]
-			self.puck_artist.set_offsets([
-				[puck_row[self.x_col], puck_row[self.y_col]]
-			])
-
-		puck_history = self.puck_data
-		puck_xy = self._trail(puck_history, frame_position)
+			self.puck_artist.set_offsets(np.empty((0, 2)))
+	
+		start = max(0, frame_position - self.trail_frames + 1)
+	
+		puck_trail_xy = self.puck_xy[start:frame_position + 1]
+		puck_trail_xy = puck_trail_xy[
+			self.puck_valid[start:frame_position + 1]
+		]
+	
+		self._set_trail(
+			self.puck_trail,
+			puck_trail_xy,
+			self.puck_trail_colour,
+		)	
 		
-		self._set_trail(self.puck_trail, puck_xy, "black")
-
-		# Prefer the source timestamp if present
-		# Otherwise show seconds to goal.
-		time_parts = []
-		
-		if (
-			"period" in current.columns
-			and "time_in_period" in current.columns
-			and current["period"].notna().any()
-			and current["time_in_period"].notna().any()
-		):
-			period = int(current["period"].dropna().iloc[0])
-			game_time = current["time_in_period"].dropna().iloc[0]
-			time_parts.append(f"P{period} {game_time}")
-		
-		if "seconds_to_goal" in current.columns and current["seconds_to_goal"].notna().any():
-			seconds = current["seconds_to_goal"].dropna().iloc[0]
-			time_parts.append(f"Goal in {-seconds:.1f} s")
-		
-		time_text = " | ".join(time_parts)
-					
+		# Update clock
 		self.clock_text.set_text(
-			f"Frame {frame_idx}  |  {time_text}"
+			f"Frame {frame_idx}  |  {self.clock_strings[frame_position]}"
 		)
+	
 		self.fig.canvas.draw_idle()
-
+	
 	def show(self):
 		plt.show()
-
-
 
 
 class ReplayController:
@@ -310,56 +424,36 @@ class ReplayController:
 
 		# Figure and animation timer
 		self.fig = replay.fig
-		self.timer = self.fig.canvas.new_timer(
-			interval=self.interval
-		)
+		self.timer = self.fig.canvas.new_timer(interval=self.interval)
 		self.timer.add_callback(self._advance_frame)
 
 		# Reserve space below the rink for controls.
 		self.fig.subplots_adjust(bottom=0.23)
 
 		# Slider — full-width row
-		slider_ax = self.fig.add_axes(
-		    [0.15, 0.12, 0.70, 0.03]
-		)
-		
+		slider_ax = self.fig.add_axes([0.15, 0.12, 0.70, 0.03])
+
 		self.slider = Slider(
-		    ax=slider_ax,
-		    label="Frame",
-		    valmin=0,
-		    valmax=self.n_frames - 1,
-		    valinit=0,
-		    valstep=1,
+			ax=slider_ax,
+			label="Frame",
+			valmin=0,
+			valmax=self.n_frames - 1,
+			valinit=0,
+			valstep=1,
 		)
-		
+
 		self.slider.on_changed(self._slider_changed)
-		
+
 		# Buttons — separate row below slider
-		previous_ax = self.fig.add_axes(
-		    [0.20, 0.025, 0.12, 0.06]
-		)
-		play_ax = self.fig.add_axes(
-		    [0.36, 0.025, 0.12, 0.06]
-		)
-		pause_ax = self.fig.add_axes(
-		    [0.52, 0.025, 0.12, 0.06]
-		)
-		next_ax = self.fig.add_axes(
-		    [0.68, 0.025, 0.12, 0.06]
-		)
-		
-		self.previous_button = Button(
-			previous_ax, "Previous"
-		)
-		self.play_button = Button(
-			play_ax, "Play"
-		)
-		self.pause_button = Button(
-			pause_ax, "Pause"
-		)
-		self.next_button = Button(
-			next_ax, "Next"
-		)
+		previous_ax = self.fig.add_axes([0.20, 0.025, 0.12, 0.06])
+		play_ax = self.fig.add_axes([0.36, 0.025, 0.12, 0.06])
+		pause_ax = self.fig.add_axes([0.52, 0.025, 0.12, 0.06])
+		next_ax = self.fig.add_axes([0.68, 0.025, 0.12, 0.06])
+
+		self.previous_button = Button(previous_ax, "Previous")
+		self.play_button = Button(play_ax, "Play")
+		self.pause_button = Button(pause_ax, "Pause")
+		self.next_button = Button(next_ax, "Next")
 
 		self.previous_button.on_clicked(self.previous_frame)
 		self.play_button.on_clicked(self.play)
@@ -368,8 +462,6 @@ class ReplayController:
 
 		# Draw initial frame.
 		self.replay.update(0)
-		
-
 
 		################################################################
 		self.fig.canvas.draw()
@@ -388,13 +480,9 @@ class ReplayController:
 		)
 		################################################################
 
-		
-
 	def _set_frame(self, position):
 		"""Set and display a frame by its position."""
-		self.position = int(np.clip(
-			position, 0, self.n_frames - 1
-		))
+		self.position = int(np.clip(position, 0, self.n_frames - 1))
 
 		# Synchronize slider without triggering its callback.
 		self.slider.eventson = False
