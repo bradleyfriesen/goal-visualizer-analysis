@@ -6,14 +6,12 @@ import os
 REPO_ROOT = Path(__file__).resolve().parents[1]
 WORKSPACE_ROOT = REPO_ROOT.parent
 
-
 # Shared data directory
 DEFAULT_DATA_DIR = WORKSPACE_ROOT / "data"
 
 DATA_DIR = Path(
-    os.environ.get("NHL_ANALYTICS_DATA_DIR", DEFAULT_DATA_DIR)
+    os.environ.get("NHL_ANALYTICS_DATA_DIR") or DEFAULT_DATA_DIR
 ).expanduser().resolve()
-
 
 # Data subdirectories
 RAW_DATA_DIR = DATA_DIR / "raw"
