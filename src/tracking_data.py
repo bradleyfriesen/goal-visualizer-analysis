@@ -149,9 +149,12 @@ def select_goal(
             "Specify exactly one of goal_number or event_id."
         )
 
-    available_events = np.sort(
-        tracking["event_id"].dropna().unique()
-    )
+    # available_events = np.sort(
+    #    tracking["event_id"].dropna().unique()
+    #)
+    available_events = tracking.sort_values(
+		by=['period', 'time_in_period'])['event_id'].unique()
+    print(available_events)
 
     if goal_number is not None:
         if not isinstance(goal_number, (int, np.integer)):
