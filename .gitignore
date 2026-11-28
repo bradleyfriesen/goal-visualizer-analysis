@@ -17,3 +17,6 @@ dist/
 
 # Local configuration and secrets
 .env
+
+# Cached datasets
+data/cache

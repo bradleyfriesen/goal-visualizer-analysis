@@ -11,6 +11,8 @@ Keys
     2  free
     3  contested      then type 2+ players, Enter        e.g.  TOR 34, BOS 88
     4  undetermined
+    5  faceoff
+    6  post_goal	  some goal_frame_idx are not precise
     z          undo the last change (and jump to the frame it affected)
     backspace  delete the keyframe at this frame (reverts to the carried value)
     [  ]       jump to the previous / next keyframe
@@ -55,6 +57,7 @@ STATE_KEYS = {
     "3": "contested",
     "4": "undetermined",
     "5": "faceoff",
+    "6": "post_goal",
 }
 STATES = tuple(STATE_KEYS.values())
  
@@ -586,7 +589,7 @@ class PossessionAnnotator:
         )
         self.replay.fig.text(
             0.5, 0.004,
-            "1 possessed  2 free  3 contested  4 undetermined  5 faceoff"
+            "1 possessed  2 free  3 contested  4 undetermined  5 faceoff  6 post goal"
             "   z undo   backspace clear   [ ] keyframes   ctrl+s save",
             ha="center", va="bottom", fontsize=7, color="gray",
         )
